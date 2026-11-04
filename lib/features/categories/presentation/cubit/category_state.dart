@@ -24,7 +24,15 @@ class CategoryLoaded extends CategoryState {
     required this.flatCategories,
     required this.searchQuery,
     required this.expandedIds,
-    required this.totalCount,
+    required this.pageSize,
+    required this.showAll,
+    required this.rootVisibleCount,
+    required this.childVisibleCounts,
+    required this.searchVisibleCount,
+    required this.totalRootCount,
+    required this.totalSearchMatchCount,
+    required this.hasMoreRoots,
+    required this.hasMoreSearch,
     this.errorMessage,
   });
 
@@ -33,8 +41,32 @@ class CategoryLoaded extends CategoryState {
   final List<Category> flatCategories;
   final String searchQuery;
   final Set<int> expandedIds;
-  final int totalCount;
+  final int pageSize;
+  final bool showAll;
+  final int rootVisibleCount;
+  final Map<int, int> childVisibleCounts;
+  final int searchVisibleCount;
+  final int totalRootCount;
+  final int totalSearchMatchCount;
+  final bool hasMoreRoots;
+  final bool hasMoreSearch;
   final String? errorMessage;
+
+  bool get isSearching => searchQuery.trim().isNotEmpty;
+
+  int childVisibleCountFor(int parentId) {
+    if (showAll) {
+      return 1 << 30;
+    }
+    return childVisibleCounts[parentId] ?? pageSize;
+  }
+
+  bool hasMoreChildren(Category parent) {
+    if (showAll) {
+      return false;
+    }
+    return parent.children.length > childVisibleCountFor(parent.id);
+  }
 
   CategoryLoaded copyWith({
     List<Category>? allCategories,
@@ -42,7 +74,15 @@ class CategoryLoaded extends CategoryState {
     List<Category>? flatCategories,
     String? searchQuery,
     Set<int>? expandedIds,
-    int? totalCount,
+    int? pageSize,
+    bool? showAll,
+    int? rootVisibleCount,
+    Map<int, int>? childVisibleCounts,
+    int? searchVisibleCount,
+    int? totalRootCount,
+    int? totalSearchMatchCount,
+    bool? hasMoreRoots,
+    bool? hasMoreSearch,
     String? errorMessage,
     bool clearErrorMessage = false,
   }) {
@@ -52,7 +92,16 @@ class CategoryLoaded extends CategoryState {
       flatCategories: flatCategories ?? this.flatCategories,
       searchQuery: searchQuery ?? this.searchQuery,
       expandedIds: expandedIds ?? this.expandedIds,
-      totalCount: totalCount ?? this.totalCount,
+      pageSize: pageSize ?? this.pageSize,
+      showAll: showAll ?? this.showAll,
+      rootVisibleCount: rootVisibleCount ?? this.rootVisibleCount,
+      childVisibleCounts: childVisibleCounts ?? this.childVisibleCounts,
+      searchVisibleCount: searchVisibleCount ?? this.searchVisibleCount,
+      totalRootCount: totalRootCount ?? this.totalRootCount,
+      totalSearchMatchCount:
+          totalSearchMatchCount ?? this.totalSearchMatchCount,
+      hasMoreRoots: hasMoreRoots ?? this.hasMoreRoots,
+      hasMoreSearch: hasMoreSearch ?? this.hasMoreSearch,
       errorMessage:
           clearErrorMessage ? null : errorMessage ?? this.errorMessage,
     );
@@ -65,7 +114,15 @@ class CategoryLoaded extends CategoryState {
         flatCategories,
         searchQuery,
         expandedIds,
-        totalCount,
+        pageSize,
+        showAll,
+        rootVisibleCount,
+        childVisibleCounts,
+        searchVisibleCount,
+        totalRootCount,
+        totalSearchMatchCount,
+        hasMoreRoots,
+        hasMoreSearch,
         errorMessage,
       ];
 }

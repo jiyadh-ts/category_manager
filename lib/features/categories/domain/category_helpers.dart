@@ -74,6 +74,7 @@ String getCategoryPath(List<Category> flatList, int id) {
 
 bool hasDuplicateSibling({
   required List<Category> flatList,
+  required int userId,
   required String name,
   required int? parentId,
   int? excludeId,
@@ -82,6 +83,9 @@ bool hasDuplicateSibling({
 
   for (final category in flatList) {
     if (excludeId != null && category.id == excludeId) {
+      continue;
+    }
+    if (category.userId != userId) {
       continue;
     }
     if (category.parentId != parentId) {
@@ -150,4 +154,74 @@ int countCategories(List<Category> tree) {
     total += countCategories(category.children);
   }
   return total;
+}
+
+/// DFS list of matching category nodes.
+/// Empty [query] returns every node; otherwise name contains the query.
+List<Category> collectMatchingCategories(
+  List<Category> tree,
+  String query,
+) {
+  final normalizedQuery = query.trim().toLowerCase();
+  final matches = <Category>[];
+
+  void walk(List<Category> nodes) {
+    for (final category in nodes) {
+      final nameMatches = normalizedQuery.isEmpty ||
+          category.name.toLowerCase().contains(normalizedQuery);
+      if (nameMatches) {
+        matches.add(category.copyWith(children: const []));
+      }
+      walk(category.children);
+    }
+  }
+
+  walk(tree);
+  return matches;
+}
+
+/// Takes the first [count] siblings for load-more paging.
+List<Category> takeFirstCategories(List<Category> items, int count) {
+  if (count <= 0) {
+    return const [];
+  }
+  if (count >= items.length) {
+    return items;
+  }
+  return items.take(count).toList();
+}
+
+/// Rebuilds a tree that includes each match and its ancestors.
+List<Category> buildTreeFromMatches(
+  List<Category> flatList,
+  List<Category> matchesOnPage,
+) {
+  if (matchesOnPage.isEmpty) {
+    return const [];
+  }
+
+  final byId = <int, Category>{};
+  for (final category in flatList) {
+    byId[category.id] = category;
+  }
+
+  final selectedIds = <int>{};
+  for (final match in matchesOnPage) {
+    Category? current = byId[match.id] ?? match;
+    while (current != null) {
+      selectedIds.add(current.id);
+      final parentId = current.parentId;
+      if (parentId == null) {
+        break;
+      }
+      current = byId[parentId];
+    }
+  }
+
+  final subset = flatList
+      .where((category) => selectedIds.contains(category.id))
+      .map((category) => category.copyWith(children: const []))
+      .toList();
+
+  return buildCategoryTree(subset);
 }

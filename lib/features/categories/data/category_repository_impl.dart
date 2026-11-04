@@ -11,19 +11,20 @@ class CategoryRepositoryImpl implements CategoryRepository {
   final CategoryLocalDataSource _localDataSource;
 
   @override
-  Future<List<Category>> getCategoryTree() async {
-    final flatList = await getFlatCategories();
+  Future<List<Category>> getCategoryTree(int userId) async {
+    final flatList = await getFlatCategories(userId);
     return buildCategoryTree(flatList);
   }
 
   @override
-  Future<List<Category>> getFlatCategories() async {
-    final rows = await _localDataSource.getAllCategories();
+  Future<List<Category>> getFlatCategories(int userId) async {
+    final rows = await _localDataSource.getCategories(userId);
     return rows.map(_toEntity).toList();
   }
 
   @override
   Future<void> addCategory({
+    required int userId,
     required String name,
     int? parentId,
   }) async {
@@ -32,17 +33,24 @@ class CategoryRepositoryImpl implements CategoryRepository {
       throw const AppException('Category name cannot be empty.');
     }
 
-    final flatList = await getFlatCategories();
+    final flatList = await getFlatCategories(userId);
 
     if (parentId != null) {
-      final parentExists = flatList.any((category) => category.id == parentId);
-      if (!parentExists) {
+      Category? parent;
+      for (final category in flatList) {
+        if (category.id == parentId) {
+          parent = category;
+          break;
+        }
+      }
+      if (parent == null || parent.userId != userId) {
         throw const AppException('Parent category was not found.');
       }
     }
 
     final isDuplicate = hasDuplicateSibling(
       flatList: flatList,
+      userId: userId,
       name: trimmedName,
       parentId: parentId,
     );
@@ -54,6 +62,7 @@ class CategoryRepositoryImpl implements CategoryRepository {
 
     try {
       await _localDataSource.insertCategory(
+        userId: userId,
         name: trimmedName,
         parentId: parentId,
         createdAt: DateTime.now(),
@@ -65,6 +74,7 @@ class CategoryRepositoryImpl implements CategoryRepository {
 
   @override
   Future<void> updateCategory({
+    required int userId,
     required int id,
     required String name,
   }) async {
@@ -73,21 +83,16 @@ class CategoryRepositoryImpl implements CategoryRepository {
       throw const AppException('Category name cannot be empty.');
     }
 
-    final flatList = await getFlatCategories();
-    Category? existing;
-    for (final category in flatList) {
-      if (category.id == id) {
-        existing = category;
-        break;
-      }
-    }
-
-    if (existing == null) {
+    final existingModel = await _localDataSource.getCategoryById(userId, id);
+    if (existingModel == null) {
       throw const AppException('Category was not found.');
     }
+    final existing = _toEntity(existingModel);
 
+    final flatList = await getFlatCategories(userId);
     final isDuplicate = hasDuplicateSibling(
       flatList: flatList,
+      userId: userId,
       name: trimmedName,
       parentId: existing.parentId,
       excludeId: id,
@@ -100,6 +105,7 @@ class CategoryRepositoryImpl implements CategoryRepository {
 
     try {
       await _localDataSource.updateCategory(
+        userId: userId,
         id: id,
         name: trimmedName,
         parentId: existing.parentId,
@@ -110,26 +116,35 @@ class CategoryRepositoryImpl implements CategoryRepository {
   }
 
   @override
-  Future<void> deleteCategory(int id) async {
-    final flatList = await getFlatCategories();
-    final exists = flatList.any((category) => category.id == id);
-    if (!exists) {
+  Future<void> deleteCategory({
+    required int userId,
+    required int id,
+  }) async {
+    final existing = await _localDataSource.getCategoryById(userId, id);
+    if (existing == null) {
       throw const AppException('Category was not found.');
     }
 
+    final flatList = await getFlatCategories(userId);
     // Children are listed first so foreign keys stay valid during delete.
     final idsToDelete = collectDescendantIds(flatList, id);
 
     try {
-      await _localDataSource.deleteCategories(idsToDelete);
+      await _localDataSource.deleteCategories(userId, idsToDelete);
     } catch (error) {
       throw AppException('Could not delete the category. $error');
     }
   }
 
+  @override
+  Future<void> claimOrphanCategories(int userId) async {
+    await _localDataSource.claimOrphanCategories(userId);
+  }
+
   Category _toEntity(CategoryModel model) {
     return Category(
       id: model.id,
+      userId: model.userId,
       name: model.name,
       parentId: model.parentId,
       createdAt: model.createdAt,

@@ -3,6 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../../../../core/storage/session_storage.dart';
 import '../../domain/auth_repository.dart';
+import '../../domain/auth_result.dart';
+import '../../domain/entities/app_user.dart';
 import 'auth_state.dart';
 
 class AuthCubit extends Cubit<AuthState> {
@@ -19,7 +21,12 @@ class AuthCubit extends Cubit<AuthState> {
   static AuthState _initialState(SessionStorage sessionStorage) {
     final savedSession = sessionStorage.readSession();
     if (savedSession != null) {
-      return AuthSuccess(savedSession);
+      return AuthSuccess(
+        AppUser.session(
+          id: savedSession.userId,
+          username: savedSession.username,
+        ),
+      );
     }
     return const AuthInitial();
   }
@@ -38,43 +45,29 @@ class AuthCubit extends Cubit<AuthState> {
     }
   }
 
-  void selectUsername(String? username) {
+  Future<void> login(String username) async {
     final currentState = state;
     if (currentState is! AuthUsersLoaded) {
       return;
     }
 
-    emit(
-      currentState.copyWith(
-        selectedUsername: username,
-        clearValidationMessage: true,
-      ),
-    );
+    try {
+      final user = _repository.findUserByLogin(currentState.users, username);
+      await _sessionStorage.saveSession(
+        AuthResult(userId: user.id, username: user.username),
+      );
+      emit(AuthSuccess(user));
+    } on AppException catch (error) {
+      emit(currentState.copyWith(errorMessage: error.message));
+    } catch (error) {
+      emit(currentState.copyWith(errorMessage: _errorMessage(error)));
+    }
   }
 
-  Future<void> login() async {
+  void clearErrorMessage() {
     final currentState = state;
-    if (currentState is! AuthUsersLoaded) {
-      return;
-    }
-
-    final username = currentState.selectedUsername;
-    if (username == null || username.trim().isEmpty) {
-      emit(
-        currentState.copyWith(
-          validationMessage: 'Please select a user to continue.',
-        ),
-      );
-      return;
-    }
-
-    emit(const AuthLoading());
-    try {
-      final result = await _repository.loginWithUsername(username);
-      await _sessionStorage.saveSession(result);
-      emit(AuthSuccess(result));
-    } catch (error) {
-      emit(AuthError(_errorMessage(error)));
+    if (currentState is AuthUsersLoaded && currentState.errorMessage != null) {
+      emit(currentState.copyWith(clearErrorMessage: true));
     }
   }
 
@@ -87,6 +80,6 @@ class AuthCubit extends Cubit<AuthState> {
     if (error is AppException) {
       return error.message;
     }
-    return 'Login failed. Please try again.';
+    return 'Something went wrong. Please try again.';
   }
 }

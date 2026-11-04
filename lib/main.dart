@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/database/app_database.dart';
 import 'core/storage/session_storage.dart';
+import 'core/theme/app_theme.dart';
 import 'features/auth/data/repositories/auth_repository_impl.dart';
 import 'features/auth/domain/auth_repository.dart';
 import 'features/auth/presentation/cubit/auth_cubit.dart';
@@ -76,7 +77,10 @@ class _CategoryManagerAppState extends State<CategoryManagerApp> {
       repository: widget.authRepository,
       sessionStorage: widget.sessionStorage,
     );
-    _categoryCubit = CategoryCubit(widget.categoryRepository);
+    _categoryCubit = CategoryCubit(
+      widget.categoryRepository,
+      authCubit: _authCubit,
+    );
     _appRouter = AppRouter(authCubit: _authCubit);
   }
 
@@ -106,10 +110,8 @@ class _CategoryManagerAppState extends State<CategoryManagerApp> {
         ],
         child: MaterialApp.router(
           title: 'Category Manager',
-          theme: ThemeData(
-            colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
-            useMaterial3: true,
-          ),
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightTheme,
           routerConfig: _appRouter.router,
         ),
       ),

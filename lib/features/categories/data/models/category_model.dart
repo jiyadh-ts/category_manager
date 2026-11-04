@@ -6,6 +6,8 @@ class CategoryEntries extends Table {
 
   IntColumn get id => integer().autoIncrement()();
 
+  IntColumn get userId => integer()();
+
   TextColumn get name => text()();
 
   IntColumn get parentId => integer().nullable().references(
@@ -19,12 +21,14 @@ class CategoryEntries extends Table {
 class CategoryModel {
   const CategoryModel({
     required this.id,
+    required this.userId,
     required this.name,
     required this.parentId,
     required this.createdAt,
   });
 
   final int id;
+  final int userId;
   final String name;
   final int? parentId;
   final DateTime createdAt;

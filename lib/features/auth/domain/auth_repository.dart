@@ -1,8 +1,7 @@
-import 'auth_result.dart';
-import 'login_user.dart';
+import 'entities/app_user.dart';
 
 abstract class AuthRepository {
-  Future<List<LoginUser>> fetchUsers();
+  Future<List<AppUser>> fetchUsers();
 
-  Future<AuthResult> loginWithUsername(String username);
+  AppUser findUserByLogin(List<AppUser> users, String login);
 }

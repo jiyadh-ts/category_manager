@@ -8,10 +8,12 @@ void main() {
   Category category({
     required int id,
     required String name,
+    int userId = 1,
     int? parentId,
   }) {
     return Category(
       id: id,
+      userId: userId,
       name: name,
       parentId: parentId,
       createdAt: now,
@@ -23,11 +25,13 @@ void main() {
       category(id: 1, name: 'Books'),
       category(id: 2, name: 'Fiction', parentId: 1),
       category(id: 3, name: 'Games'),
+      category(id: 4, name: 'Fiction', userId: 2, parentId: 1),
     ];
 
-    test('rejects the same name under the same parent', () {
+    test('rejects the same name under the same parent for the same user', () {
       final isDuplicate = hasDuplicateSibling(
         flatList: flatList,
+        userId: 1,
         name: 'fiction',
         parentId: 1,
       );
@@ -38,7 +42,19 @@ void main() {
     test('allows the same name under a different parent', () {
       final isDuplicate = hasDuplicateSibling(
         flatList: flatList,
+        userId: 1,
         name: 'Fiction',
+        parentId: null,
+      );
+
+      expect(isDuplicate, isFalse);
+    });
+
+    test('allows the same name for a different user', () {
+      final isDuplicate = hasDuplicateSibling(
+        flatList: flatList,
+        userId: 2,
+        name: 'Books',
         parentId: null,
       );
 
@@ -48,6 +64,7 @@ void main() {
     test('ignores the category being edited', () {
       final isDuplicate = hasDuplicateSibling(
         flatList: flatList,
+        userId: 1,
         name: 'Fiction',
         parentId: 1,
         excludeId: 2,
@@ -140,6 +157,53 @@ void main() {
       ];
 
       expect(getCategoryPath(flatList, 3), 'Books > Fiction > Sci-Fi');
+    });
+  });
+
+  group('load more helpers', () {
+    late List<Category> flatList;
+    late List<Category> tree;
+
+    setUp(() {
+      flatList = [
+        for (var i = 1; i <= 25; i++) category(id: i, name: 'Item $i'),
+        category(id: 100, name: 'Books'),
+        category(id: 101, name: 'Fiction', parentId: 100),
+        category(id: 102, name: 'Samsung', parentId: 101),
+      ];
+      tree = buildCategoryTree(flatList);
+    });
+
+    test('takeFirstCategories returns the first batch of siblings', () {
+      final roots = tree.where((c) => c.parentId == null).toList();
+      final firstBatch = takeFirstCategories(roots, 10);
+
+      expect(roots.length, greaterThan(10));
+      expect(firstBatch.length, 10);
+      expect(firstBatch.first.name, 'Item 1');
+      expect(firstBatch.last.name, 'Item 10');
+    });
+
+    test('takeFirstCategories second batch continues after the first 10', () {
+      final matches = collectMatchingCategories(tree, 'Item');
+      final secondBatch = matches.skip(10).take(10).toList();
+
+      expect(matches.length, 25);
+      expect(secondBatch.first.name, 'Item 11');
+      expect(secondBatch.last.name, 'Item 20');
+    });
+
+    test('buildTreeFromMatches preserves ancestors for a deep match', () {
+      final matches = collectMatchingCategories(tree, 'Samsung');
+      final visible = buildTreeFromMatches(
+        flatList,
+        takeFirstCategories(matches, 10),
+      );
+
+      expect(matches.length, 1);
+      expect(visible.single.name, 'Books');
+      expect(visible.single.children.single.name, 'Fiction');
+      expect(visible.single.children.single.children.single.name, 'Samsung');
     });
   });
 }

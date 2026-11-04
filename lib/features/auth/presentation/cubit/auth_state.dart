@@ -1,7 +1,6 @@
 import 'package:equatable/equatable.dart';
 
-import '../../domain/auth_result.dart';
-import '../../domain/login_user.dart';
+import '../../domain/entities/app_user.dart';
 
 abstract class AuthState extends Equatable {
   const AuthState();
@@ -21,40 +20,35 @@ class AuthLoading extends AuthState {
 class AuthUsersLoaded extends AuthState {
   const AuthUsersLoaded({
     required this.users,
-    this.selectedUsername,
-    this.validationMessage,
+    this.errorMessage,
   });
 
-  final List<LoginUser> users;
-  final String? selectedUsername;
-  final String? validationMessage;
+  final List<AppUser> users;
+  final String? errorMessage;
 
   AuthUsersLoaded copyWith({
-    List<LoginUser>? users,
-    String? selectedUsername,
-    String? validationMessage,
-    bool clearValidationMessage = false,
+    List<AppUser>? users,
+    String? errorMessage,
+    bool clearErrorMessage = false,
   }) {
     return AuthUsersLoaded(
       users: users ?? this.users,
-      selectedUsername: selectedUsername ?? this.selectedUsername,
-      validationMessage: clearValidationMessage
-          ? null
-          : validationMessage ?? this.validationMessage,
+      errorMessage:
+          clearErrorMessage ? null : errorMessage ?? this.errorMessage,
     );
   }
 
   @override
-  List<Object?> get props => [users, selectedUsername, validationMessage];
+  List<Object?> get props => [users, errorMessage];
 }
 
 class AuthSuccess extends AuthState {
-  const AuthSuccess(this.result);
+  const AuthSuccess(this.user);
 
-  final AuthResult result;
+  final AppUser user;
 
   @override
-  List<Object?> get props => [result];
+  List<Object?> get props => [user];
 }
 
 class AuthError extends AuthState {

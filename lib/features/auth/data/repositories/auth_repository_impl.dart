@@ -3,10 +3,9 @@ import 'package:dio/dio.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../../domain/app_company.dart';
 import '../../domain/auth_repository.dart';
-import '../../domain/auth_result.dart';
 import '../../domain/entities/app_user.dart';
-import '../../domain/login_company.dart';
-import '../../domain/login_user.dart';
+import '../../domain/geo_location.dart';
+import '../../domain/user_address.dart';
 
 class AuthRepositoryImpl implements AuthRepository {
   AuthRepositoryImpl(this._dio);
@@ -14,7 +13,7 @@ class AuthRepositoryImpl implements AuthRepository {
   final Dio _dio;
 
   @override
-  Future<List<LoginUser>> fetchUsers() async {
+  Future<List<AppUser>> fetchUsers() async {
     try {
       final response = await _dio.get('/users');
       final data = response.data;
@@ -22,10 +21,10 @@ class AuthRepositoryImpl implements AuthRepository {
         throw const AppException('No users were returned by the API.');
       }
 
-      final users = <LoginUser>[];
+      final users = <AppUser>[];
       for (final item in data) {
         if (item is Map) {
-          users.add(_mapLoginUser(Map<String, dynamic>.from(item)));
+          users.add(_mapUser(Map<String, dynamic>.from(item)));
         }
       }
       return users;
@@ -39,67 +38,63 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
-  Future<AuthResult> loginWithUsername(String username) async {
-    final trimmedUsername = username.trim();
-    if (trimmedUsername.isEmpty) {
-      throw const AppException('Please select a user to log in.');
+  AppUser findUserByLogin(List<AppUser> users, String login) {
+    final trimmedLogin = login.trim();
+    if (trimmedLogin.isEmpty) {
+      throw const AppException('Please enter a username or email.');
     }
 
-    final users = await fetchUsers();
-    LoginUser? matchedUser;
+    final normalized = trimmedLogin.toLowerCase();
     for (final user in users) {
-      if (user.username.toLowerCase() == trimmedUsername.toLowerCase()) {
-        matchedUser = user;
-        break;
+      if (user.username.toLowerCase() == normalized ||
+          user.email.toLowerCase() == normalized) {
+        return user;
       }
     }
 
-    if (matchedUser == null) {
-      throw const AppException('Selected user was not found in the API data.');
-    }
-
-    // JSONPlaceholder has no real auth. We only store the user id and username.
-    final appUser = _toAppUser(matchedUser);
-    return AuthResult(
-      userId: appUser.id,
-      username: appUser.username,
-    );
+    throw const AppException('Invalid username or email.');
   }
 
-  LoginUser _mapLoginUser(Map<String, dynamic> json) {
+  AppUser _mapUser(Map<String, dynamic> json) {
     final companyJson = json['company'];
     Map<String, dynamic> companyMap = const {};
     if (companyJson is Map) {
       companyMap = Map<String, dynamic>.from(companyJson);
     }
 
-    return LoginUser(
+    final addressJson = json['address'];
+    Map<String, dynamic> addressMap = const {};
+    if (addressJson is Map) {
+      addressMap = Map<String, dynamic>.from(addressJson);
+    }
+
+    final geoJson = addressMap['geo'];
+    Map<String, dynamic> geoMap = const {};
+    if (geoJson is Map) {
+      geoMap = Map<String, dynamic>.from(geoJson);
+    }
+
+    return AppUser(
       id: (json['id'] as num).toInt(),
-      name: json['name'] as String,
-      username: json['username'] as String,
-      email: json['email'] as String,
-      phone: json['phone'] as String,
-      website: json['website'] as String,
-      company: LoginCompany(
+      name: json['name'] as String? ?? '',
+      username: json['username'] as String? ?? '',
+      email: json['email'] as String? ?? '',
+      address: UserAddress(
+        street: addressMap['street'] as String? ?? '',
+        suite: addressMap['suite'] as String? ?? '',
+        city: addressMap['city'] as String? ?? '',
+        zipcode: addressMap['zipcode'] as String? ?? '',
+        geo: GeoLocation(
+          lat: geoMap['lat'] as String? ?? '',
+          lng: geoMap['lng'] as String? ?? '',
+        ),
+      ),
+      phone: json['phone'] as String? ?? '',
+      website: json['website'] as String? ?? '',
+      company: AppCompany(
         name: companyMap['name'] as String? ?? '',
         catchPhrase: companyMap['catchPhrase'] as String? ?? '',
         bs: companyMap['bs'] as String? ?? '',
-      ),
-    );
-  }
-
-  AppUser _toAppUser(LoginUser user) {
-    return AppUser(
-      id: user.id,
-      name: user.name,
-      username: user.username,
-      email: user.email,
-      phone: user.phone,
-      website: user.website,
-      company: AppCompany(
-        name: user.company.name,
-        catchPhrase: user.company.catchPhrase,
-        bs: user.company.bs,
       ),
     );
   }
@@ -110,7 +105,7 @@ class AuthRepositoryImpl implements AuthRepository {
       return 'The request timed out. Please try again.';
     }
     if (error.type == DioExceptionType.connectionError) {
-      return 'Could not connect to the API. Check your internet connection.';
+      return 'No internet connectivity. Check your connection and try again.';
     }
     return 'Could not load users from the API.';
   }
