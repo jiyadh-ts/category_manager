@@ -1,8 +1,10 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/database/app_database.dart';
+import 'core/storage/session_storage.dart';
 import 'features/auth/data/repositories/auth_repository_impl.dart';
 import 'features/auth/domain/auth_repository.dart';
 import 'features/auth/presentation/cubit/auth_cubit.dart';
@@ -14,8 +16,10 @@ import 'features/profile/data/repositories/profile_repository_impl.dart';
 import 'features/profile/domain/profile_repository.dart';
 import 'routes/app_router.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final prefs = await SharedPreferences.getInstance();
+  final sessionStorage = SessionStorage(prefs);
 
   final database = AppDatabase();
   final dio = Dio(
@@ -37,6 +41,7 @@ void main() {
       authRepository: authRepository,
       profileRepository: profileRepository,
       categoryRepository: categoryRepository,
+      sessionStorage: sessionStorage,
     ),
   );
 }
@@ -47,11 +52,13 @@ class CategoryManagerApp extends StatefulWidget {
     required this.authRepository,
     required this.profileRepository,
     required this.categoryRepository,
+    required this.sessionStorage,
   });
 
   final AuthRepository authRepository;
   final ProfileRepository profileRepository;
   final CategoryRepository categoryRepository;
+  final SessionStorage sessionStorage;
 
   @override
   State<CategoryManagerApp> createState() => _CategoryManagerAppState();
@@ -65,7 +72,10 @@ class _CategoryManagerAppState extends State<CategoryManagerApp> {
   @override
   void initState() {
     super.initState();
-    _authCubit = AuthCubit(widget.authRepository);
+    _authCubit = AuthCubit(
+      repository: widget.authRepository,
+      sessionStorage: widget.sessionStorage,
+    );
     _categoryCubit = CategoryCubit(widget.categoryRepository);
     _appRouter = AppRouter(authCubit: _authCubit);
   }

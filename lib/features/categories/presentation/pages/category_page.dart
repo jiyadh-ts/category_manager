@@ -42,8 +42,11 @@ class _CategoryPageState extends State<CategoryPage> {
     await context.read<CategoryCubit>().addCategory(name: name);
   }
 
-  void _logout() {
-    context.read<AuthCubit>().logout();
+  Future<void> _logout() async {
+    await context.read<AuthCubit>().logout();
+    if (!mounted) {
+      return;
+    }
     context.go('/login');
   }
 

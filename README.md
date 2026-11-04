@@ -7,12 +7,14 @@ The goal of this project is readable, interview-friendly code: Cubit for state, 
 ## Features
 
 - Mock login using JSONPlaceholder users
+- Login session saved with SharedPreferences (skip login after restart)
+- Logout clears the saved session and returns to login
 - Profile page loaded from the same API
 - Unlimited nested categories stored locally
 - Add, edit, delete, search, expand/collapse
 - Duplicate sibling-name validation
 - Cascade delete of subcategories
-- Data survives app restart (categories only)
+- Categories persist in SQLite after app restart
 
 ## Architecture
 
@@ -38,6 +40,7 @@ lib/
   main.dart
   core/database/          Drift database
   core/errors/            AppException
+  core/storage/           SharedPreferences session helper
   features/auth/          Mock login
   features/profile/       User profile
   features/categories/    Category CRUD and tree UI
@@ -78,7 +81,7 @@ Typical states: Initial, Loading, Success/Loaded, Error.
 
 Widgets never query the database. They call Cubit methods and render the current state.
 
-Login state is kept in memory only (`AuthResult` with `userId` and `username`). Restarting the app returns to login. Categories stay in SQLite.
+Login stores only `userId` and `username` in SharedPreferences. On startup, `AuthCubit` restores that session, so GoRouter opens CategoryPage instead of LoginPage. Logout clears the saved session. Categories stay in SQLite.
 
 ## API explanation
 
