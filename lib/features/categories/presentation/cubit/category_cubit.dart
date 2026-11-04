@@ -5,7 +5,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/errors/app_exception.dart';
 import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../../../auth/presentation/cubit/auth_state.dart';
-import '../../domain/category_helpers.dart';
 import '../../domain/category_repository.dart';
 import '../../domain/entities/category.dart';
 import 'category_state.dart';
@@ -35,6 +34,9 @@ class CategoryCubit extends Cubit<CategoryState> {
   int _rootVisibleCount = defaultPageSize;
   Map<int, int> _childVisibleCounts = <int, int>{};
   int _searchVisibleCount = defaultPageSize;
+  List<Category> _pendingRestore = const [];
+  String? _pendingUndoMessage;
+  int _refreshToken = 0;
 
   int get _effectivePageSize => _showAll ? _allPageSize : _pageSize;
 
@@ -64,6 +66,10 @@ class CategoryCubit extends Cubit<CategoryState> {
         name: name,
         parentId: parentId,
       );
+      if (parentId != null) {
+        _expandedIds = Set<int>.from(_expandedIds)..add(parentId);
+        _childVisibleCounts.putIfAbsent(parentId, () => _effectivePageSize);
+      }
       await _reloadCategories(userId);
     } catch (error) {
       _emitMutationError(error);
@@ -97,27 +103,78 @@ class CategoryCubit extends Cubit<CategoryState> {
       return;
     }
 
+    final currentState = state;
+    if (currentState is! CategoryLoaded) {
+      return;
+    }
+
     try {
+      final snapshot = await _repository.getSubtreeForRestore(
+        userId: userId,
+        rootId: id,
+      );
+      if (snapshot.isEmpty) {
+        throw const AppException('Category was not found.');
+      }
+
+      final deletedName = snapshot.first.name;
+      _pendingRestore = snapshot;
+      _pendingUndoMessage = 'Category "$deletedName" deleted.';
+
       await _repository.deleteCategory(userId: userId, id: id);
       _expandedIds.remove(id);
       _childVisibleCounts.remove(id);
+      await _reloadCategories(userId, keepUndoMessage: true);
+    } catch (error) {
+      _pendingRestore = const [];
+      _pendingUndoMessage = null;
+      _emitMutationError(error);
+    }
+  }
+
+  Future<void> undoDelete() async {
+    final userId = _requireUserId();
+    if (userId == null || _pendingRestore.isEmpty) {
+      return;
+    }
+
+    try {
+      final snapshot = List<Category>.from(_pendingRestore);
+      _pendingRestore = const [];
+      _pendingUndoMessage = null;
+      await _repository.restoreDeletedCategories(
+        userId: userId,
+        snapshot: snapshot,
+      );
       await _reloadCategories(userId);
     } catch (error) {
       _emitMutationError(error);
     }
   }
 
-  void search(String query) {
+  void clearUndoMessage() {
+    _pendingUndoMessage = null;
+    final currentState = state;
+    if (currentState is CategoryLoaded && currentState.undoMessage != null) {
+      emit(currentState.copyWith(clearUndoMessage: true));
+    }
+  }
+
+  Future<void> search(String query) async {
     _searchQuery = query;
     _searchVisibleCount = _effectivePageSize;
     if (query.trim().isEmpty) {
       _rootVisibleCount = _effectivePageSize;
     }
-    _emitVisibleFromCurrent();
+    final userId = _currentUserId;
+    if (userId == null) {
+      return;
+    }
+    await _reloadCategories(userId);
   }
 
   /// [size] null means All; otherwise 10 / 20 / 50.
-  void setPageSize(int? size) {
+  Future<void> setPageSize(int? size) async {
     if (size == null) {
       _showAll = true;
       _pageSize = defaultPageSize;
@@ -131,10 +188,14 @@ class CategoryCubit extends Cubit<CategoryState> {
     for (final id in _expandedIds) {
       _childVisibleCounts[id] = _effectivePageSize;
     }
-    _emitVisibleFromCurrent();
+    final userId = _currentUserId;
+    if (userId == null) {
+      return;
+    }
+    await _reloadCategories(userId);
   }
 
-  void loadMoreRoots() {
+  Future<void> loadMoreRoots() async {
     final currentState = state;
     if (currentState is! CategoryLoaded ||
         currentState.isSearching ||
@@ -145,10 +206,14 @@ class CategoryCubit extends Cubit<CategoryState> {
       return;
     }
     _rootVisibleCount += _pageSize;
-    _emitVisibleFromCurrent();
+    final userId = _currentUserId;
+    if (userId == null) {
+      return;
+    }
+    await _reloadCategories(userId);
   }
 
-  void loadMoreChildren(int parentId) {
+  Future<void> loadMoreChildren(int parentId) async {
     final currentState = state;
     if (currentState is! CategoryLoaded ||
         currentState.isSearching ||
@@ -158,10 +223,14 @@ class CategoryCubit extends Cubit<CategoryState> {
     final current = _childVisibleCounts[parentId] ?? _pageSize;
     _childVisibleCounts = Map<int, int>.from(_childVisibleCounts)
       ..[parentId] = current + _pageSize;
-    emit(currentState.copyWith(childVisibleCounts: _childVisibleCounts));
+    final userId = _currentUserId;
+    if (userId == null) {
+      return;
+    }
+    await _reloadCategories(userId);
   }
 
-  void loadMoreSearch() {
+  Future<void> loadMoreSearch() async {
     final currentState = state;
     if (currentState is! CategoryLoaded ||
         !currentState.isSearching ||
@@ -172,7 +241,11 @@ class CategoryCubit extends Cubit<CategoryState> {
       return;
     }
     _searchVisibleCount += _pageSize;
-    _emitVisibleFromCurrent();
+    final userId = _currentUserId;
+    if (userId == null) {
+      return;
+    }
+    await _reloadCategories(userId);
   }
 
   void clearErrorMessage() {
@@ -182,9 +255,9 @@ class CategoryCubit extends Cubit<CategoryState> {
     }
   }
 
-  void toggleExpanded(int categoryId) {
+  Future<void> toggleExpanded(int categoryId) async {
     final currentState = state;
-    if (currentState is! CategoryLoaded) {
+    if (currentState is! CategoryLoaded || currentState.isSearching) {
       return;
     }
 
@@ -197,12 +270,11 @@ class CategoryCubit extends Cubit<CategoryState> {
     }
     _expandedIds = updatedIds;
 
-    emit(
-      currentState.copyWith(
-        expandedIds: updatedIds,
-        childVisibleCounts: Map<int, int>.from(_childVisibleCounts),
-      ),
-    );
+    final userId = _currentUserId;
+    if (userId == null) {
+      return;
+    }
+    await _reloadCategories(userId);
   }
 
   @override
@@ -238,76 +310,143 @@ class CategoryCubit extends Cubit<CategoryState> {
     }
   }
 
-  Future<void> _reloadCategories(int userId) async {
+  Future<void> _reloadCategories(
+    int userId, {
+    bool keepUndoMessage = false,
+  }) async {
+    final token = ++_refreshToken;
     try {
-      final tree = await _repository.getCategoryTree(userId);
-      final flatList = await _repository.getFlatCategories(userId);
-      emit(_buildLoadedState(tree: tree, flatList: flatList));
+      final stats = await _repository.getCategoryStats(userId);
+      if (token != _refreshToken) {
+        return;
+      }
+
+      final isSearching = _searchQuery.trim().isNotEmpty;
+      if (isSearching) {
+        final limit = _showAll ? _allPageSize : _searchVisibleCount;
+        final page = await _repository.fetchSearchPage(
+          userId: userId,
+          query: _searchQuery,
+          limit: limit,
+        );
+        if (token != _refreshToken) {
+          return;
+        }
+
+        emit(
+          CategoryLoaded(
+            visibleCategories: page.tree,
+            searchQuery: _searchQuery,
+            expandedIds: _expandedIds,
+            pageSize: _pageSize,
+            showAll: _showAll,
+            rootVisibleCount: _rootVisibleCount,
+            childVisibleCounts: Map<int, int>.from(_childVisibleCounts),
+            searchVisibleCount: page.totalMatches == 0
+                ? 0
+                : (limit > page.totalMatches ? page.totalMatches : limit),
+            totalRootCount: stats.roots,
+            totalSearchMatchCount: page.totalMatches,
+            totalCategories: stats.total,
+            nestedCount: stats.nested,
+            hasMoreRoots: false,
+            hasMoreSearch: !_showAll && page.totalMatches > limit,
+            undoMessage: keepUndoMessage ? _pendingUndoMessage : null,
+          ),
+        );
+      } else {
+        final rootLimit = _showAll ? _allPageSize : _rootVisibleCount;
+        final roots = await _repository.fetchRoots(
+          userId: userId,
+          limit: rootLimit,
+        );
+        if (token != _refreshToken) {
+          return;
+        }
+
+        final visible = await _attachExpandedChildren(
+          userId: userId,
+          nodes: roots,
+          token: token,
+        );
+        if (token != _refreshToken || visible == null) {
+          return;
+        }
+
+        emit(
+          CategoryLoaded(
+            visibleCategories: visible,
+            searchQuery: _searchQuery,
+            expandedIds: _expandedIds,
+            pageSize: _pageSize,
+            showAll: _showAll,
+            rootVisibleCount: stats.roots == 0
+                ? 0
+                : (rootLimit > stats.roots ? stats.roots : rootLimit),
+            childVisibleCounts: Map<int, int>.from(_childVisibleCounts),
+            searchVisibleCount: _searchVisibleCount,
+            totalRootCount: stats.roots,
+            totalSearchMatchCount: 0,
+            totalCategories: stats.total,
+            nestedCount: stats.nested,
+            hasMoreRoots: !_showAll && stats.roots > rootLimit,
+            hasMoreSearch: false,
+            undoMessage: keepUndoMessage ? _pendingUndoMessage : null,
+          ),
+        );
+      }
+
+      if (!keepUndoMessage) {
+        _pendingUndoMessage = null;
+      }
     } catch (error) {
+      if (token != _refreshToken) {
+        return;
+      }
       emit(CategoryError(_errorMessage(error)));
     }
   }
 
-  void _emitVisibleFromCurrent() {
-    final currentState = state;
-    if (currentState is! CategoryLoaded) {
-      return;
-    }
+  Future<List<Category>?> _attachExpandedChildren({
+    required int userId,
+    required List<Category> nodes,
+    required int token,
+  }) async {
+    final result = <Category>[];
+    for (final node in nodes) {
+      if (token != _refreshToken) {
+        return null;
+      }
 
-    emit(
-      _buildLoadedState(
-        tree: currentState.allCategories,
-        flatList: currentState.flatCategories,
-      ),
-    );
-  }
+      if (!_expandedIds.contains(node.id) || node.childCount == 0) {
+        result.add(node.copyWith(children: const []));
+        continue;
+      }
 
-  CategoryLoaded _buildLoadedState({
-    required List<Category> tree,
-    required List<Category> flatList,
-  }) {
-    final isSearching = _searchQuery.trim().isNotEmpty;
-    if (isSearching) {
-      final matches = collectMatchingCategories(tree, _searchQuery);
-      final visibleCount =
-          _showAll ? matches.length : _searchVisibleCount;
-      final visibleMatches = takeFirstCategories(matches, visibleCount);
-      return CategoryLoaded(
-        allCategories: tree,
-        visibleCategories: buildTreeFromMatches(flatList, visibleMatches),
-        flatCategories: flatList,
-        searchQuery: _searchQuery,
-        expandedIds: _expandedIds,
-        pageSize: _pageSize,
-        showAll: _showAll,
-        rootVisibleCount: _rootVisibleCount,
-        childVisibleCounts: Map<int, int>.from(_childVisibleCounts),
-        searchVisibleCount: visibleCount,
-        totalRootCount: tree.length,
-        totalSearchMatchCount: matches.length,
-        hasMoreRoots: false,
-        hasMoreSearch: !_showAll && matches.length > visibleCount,
+      final childLimit = _showAll
+          ? _allPageSize
+          : (_childVisibleCounts[node.id] ?? _effectivePageSize);
+      final children = await _repository.fetchChildren(
+        userId: userId,
+        parentId: node.id,
+        limit: childLimit,
       );
-    }
+      if (token != _refreshToken) {
+        return null;
+      }
 
-    final visibleCount = _showAll ? tree.length : _rootVisibleCount;
-    final visibleRoots = takeFirstCategories(tree, visibleCount);
-    return CategoryLoaded(
-      allCategories: tree,
-      visibleCategories: visibleRoots,
-      flatCategories: flatList,
-      searchQuery: _searchQuery,
-      expandedIds: _expandedIds,
-      pageSize: _pageSize,
-      showAll: _showAll,
-      rootVisibleCount: visibleCount,
-      childVisibleCounts: Map<int, int>.from(_childVisibleCounts),
-      searchVisibleCount: _searchVisibleCount,
-      totalRootCount: tree.length,
-      totalSearchMatchCount: 0,
-      hasMoreRoots: !_showAll && tree.length > visibleCount,
-      hasMoreSearch: false,
-    );
+      final nested = await _attachExpandedChildren(
+        userId: userId,
+        nodes: children,
+        token: token,
+      );
+      if (nested == null) {
+        return null;
+      }
+
+      result.add(node.copyWith(children: nested));
+    }
+    return result;
   }
 
   void _clearUserScopedUiState() {
@@ -318,6 +457,8 @@ class CategoryCubit extends Cubit<CategoryState> {
     _rootVisibleCount = defaultPageSize;
     _childVisibleCounts = <int, int>{};
     _searchVisibleCount = defaultPageSize;
+    _pendingRestore = const [];
+    _pendingUndoMessage = null;
   }
 
   int? _requireUserId() {

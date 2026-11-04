@@ -33,16 +33,20 @@ class CategoryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasChildren = category.children.isNotEmpty;
+    final hasChildren = category.childCount > 0;
     // Search results include match + ancestors; keep the path expanded so the
     // matching folder is visible without tapping chevrons.
     final isExpanded =
         state.isSearching || state.expandedIds.contains(category.id);
     final isRoot = depth == 0;
-    final visibleChildCount = state.childVisibleCountFor(category.id);
-    final visibleChildren = category.children.take(visibleChildCount).toList();
     final hasMoreChildren =
         !state.isSearching && state.hasMoreChildren(category);
+    final query = state.searchQuery.trim().toLowerCase();
+    final showBreadcrumb = state.isSearching &&
+        query.isNotEmpty &&
+        category.name.toLowerCase().contains(query);
+    final breadcrumbPath =
+        showBreadcrumb ? (category.path ?? category.name) : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -137,6 +141,18 @@ class CategoryTile extends StatelessWidget {
                             isRoot ? FontWeight.w600 : FontWeight.w500,
                       ),
                     ),
+                    if (breadcrumbPath != null && breadcrumbPath.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        breadcrumbPath,
+                        softWrap: true,
+                        style: const TextStyle(
+                          color: AppColors.onSurfaceVariant,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 4),
                     Container(
                       padding: const EdgeInsets.symmetric(
@@ -151,7 +167,7 @@ class CategoryTile extends StatelessWidget {
                       ),
                       child: Text(
                         hasChildren
-                            ? '${category.children.length} ${category.children.length == 1 ? 'sub' : 'subs'}'
+                            ? '${category.childCount} ${category.childCount == 1 ? 'sub' : 'subs'}'
                             : 'Empty',
                         style: const TextStyle(
                           color: AppColors.onSurfaceVariant,
@@ -224,7 +240,7 @@ class CategoryTile extends StatelessWidget {
           ),
         ),
         if (hasChildren && isExpanded) ...[
-          ...visibleChildren.map(
+          ...category.children.map(
             (child) => CategoryTile(
               category: child,
               state: state,

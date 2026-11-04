@@ -134,6 +134,22 @@ List<int> collectDescendantIds(List<Category> flatList, int id) {
   return ids;
 }
 
+/// Parent-before-child snapshot for undo restore (reverse of delete order).
+List<Category> collectSubtreeForRestore(List<Category> flatList, int rootId) {
+  final byId = <int, Category>{};
+  for (final category in flatList) {
+    byId[category.id] = category;
+  }
+  if (!byId.containsKey(rootId)) {
+    return const [];
+  }
+
+  final deleteOrder = collectDescendantIds(flatList, rootId);
+  return deleteOrder.reversed
+      .map((id) => byId[id]!.copyWith(children: const []))
+      .toList();
+}
+
 void _collectChildrenFirst(
   List<Category> flatList,
   int parentId,

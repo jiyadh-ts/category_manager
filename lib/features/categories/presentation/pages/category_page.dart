@@ -108,11 +108,30 @@ class _CategoryPageState extends State<CategoryPage> {
             Expanded(
               child: BlocConsumer<CategoryCubit, CategoryState>(
                 listener: (context, state) {
-                  if (state is CategoryLoaded && state.errorMessage != null) {
+                  if (state is! CategoryLoaded) {
+                    return;
+                  }
+                  if (state.errorMessage != null) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(content: Text(state.errorMessage!)),
                     );
                     context.read<CategoryCubit>().clearErrorMessage();
+                  }
+                  if (state.undoMessage != null) {
+                    final message = state.undoMessage!;
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(message),
+                        action: SnackBarAction(
+                          label: 'UNDO',
+                          onPressed: () {
+                            context.read<CategoryCubit>().undoDelete();
+                          },
+                        ),
+                      ),
+                    );
+                    context.read<CategoryCubit>().clearUndoMessage();
                   }
                 },
                 builder: (context, state) {
@@ -193,78 +212,107 @@ class _CategoryPageState extends State<CategoryPage> {
   }
 
   Widget _buildHeaderCard() {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.borderSubtle),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: const BoxDecoration(
-              color: AppColors.secondaryFixed,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.folder,
-              color: AppColors.onSecondaryFixed,
-              size: 22,
-            ),
-          ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'My Categories',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.onSurface,
-                  ),
-                ),
-                Text(
-                  'Manage your fun items!',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          ElevatedButton.icon(
-            onPressed: _addRootCategory,
-            icon: const Icon(Icons.add_circle, size: 16),
-            label: const Text('+ New Folder'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: AppColors.onPrimary,
-              elevation: 0,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
+    return BlocBuilder<CategoryCubit, CategoryState>(
+      buildWhen: (previous, current) {
+        if (previous is! CategoryLoaded || current is! CategoryLoaded) {
+          return previous.runtimeType != current.runtimeType;
+        }
+        return previous.totalCategories != current.totalCategories ||
+            previous.totalRootCount != current.totalRootCount ||
+            previous.nestedCount != current.nestedCount;
+      },
+      builder: (context, state) {
+        final loaded = state is CategoryLoaded ? state : null;
+        final total = loaded?.totalCategories ?? 0;
+        final roots = loaded?.totalRootCount ?? 0;
+        final nested = loaded?.nestedCount ?? 0;
+
+        return Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppColors.surfaceContainerLowest,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.borderSubtle),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
               ),
-              textStyle: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            ],
           ),
-        ],
-      ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: const BoxDecoration(
+                      color: AppColors.secondaryFixed,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.folder,
+                      color: AppColors.onSecondaryFixed,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'My Categories',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.onSurface,
+                      ),
+                    ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: _addRootCategory,
+                    icon: const Icon(Icons.add_circle, size: 16),
+                    label: const Text('+ New Folder'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: AppColors.onPrimary,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _StatChip(label: 'Categories', value: '$total'),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _StatChip(label: 'Root', value: '$roots'),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _StatChip(label: 'Nested', value: '$nested'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -447,5 +495,44 @@ class _CategoryPageState extends State<CategoryPage> {
       ),
     );
   }
+}
 
+class _StatChip extends StatelessWidget {
+  const _StatChip({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainer,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: AppColors.onSurface,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w500,
+              color: AppColors.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

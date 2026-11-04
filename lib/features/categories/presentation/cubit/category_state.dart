@@ -19,9 +19,7 @@ class CategoryLoading extends CategoryState {
 
 class CategoryLoaded extends CategoryState {
   const CategoryLoaded({
-    required this.allCategories,
     required this.visibleCategories,
-    required this.flatCategories,
     required this.searchQuery,
     required this.expandedIds,
     required this.pageSize,
@@ -31,14 +29,15 @@ class CategoryLoaded extends CategoryState {
     required this.searchVisibleCount,
     required this.totalRootCount,
     required this.totalSearchMatchCount,
+    required this.totalCategories,
+    required this.nestedCount,
     required this.hasMoreRoots,
     required this.hasMoreSearch,
     this.errorMessage,
+    this.undoMessage,
   });
 
-  final List<Category> allCategories;
   final List<Category> visibleCategories;
-  final List<Category> flatCategories;
   final String searchQuery;
   final Set<int> expandedIds;
   final int pageSize;
@@ -48,9 +47,12 @@ class CategoryLoaded extends CategoryState {
   final int searchVisibleCount;
   final int totalRootCount;
   final int totalSearchMatchCount;
+  final int totalCategories;
+  final int nestedCount;
   final bool hasMoreRoots;
   final bool hasMoreSearch;
   final String? errorMessage;
+  final String? undoMessage;
 
   bool get isSearching => searchQuery.trim().isNotEmpty;
 
@@ -62,16 +64,14 @@ class CategoryLoaded extends CategoryState {
   }
 
   bool hasMoreChildren(Category parent) {
-    if (showAll) {
+    if (showAll || isSearching) {
       return false;
     }
-    return parent.children.length > childVisibleCountFor(parent.id);
+    return parent.childCount > parent.children.length;
   }
 
   CategoryLoaded copyWith({
-    List<Category>? allCategories,
     List<Category>? visibleCategories,
-    List<Category>? flatCategories,
     String? searchQuery,
     Set<int>? expandedIds,
     int? pageSize,
@@ -81,15 +81,17 @@ class CategoryLoaded extends CategoryState {
     int? searchVisibleCount,
     int? totalRootCount,
     int? totalSearchMatchCount,
+    int? totalCategories,
+    int? nestedCount,
     bool? hasMoreRoots,
     bool? hasMoreSearch,
     String? errorMessage,
     bool clearErrorMessage = false,
+    String? undoMessage,
+    bool clearUndoMessage = false,
   }) {
     return CategoryLoaded(
-      allCategories: allCategories ?? this.allCategories,
       visibleCategories: visibleCategories ?? this.visibleCategories,
-      flatCategories: flatCategories ?? this.flatCategories,
       searchQuery: searchQuery ?? this.searchQuery,
       expandedIds: expandedIds ?? this.expandedIds,
       pageSize: pageSize ?? this.pageSize,
@@ -100,18 +102,19 @@ class CategoryLoaded extends CategoryState {
       totalRootCount: totalRootCount ?? this.totalRootCount,
       totalSearchMatchCount:
           totalSearchMatchCount ?? this.totalSearchMatchCount,
+      totalCategories: totalCategories ?? this.totalCategories,
+      nestedCount: nestedCount ?? this.nestedCount,
       hasMoreRoots: hasMoreRoots ?? this.hasMoreRoots,
       hasMoreSearch: hasMoreSearch ?? this.hasMoreSearch,
       errorMessage:
           clearErrorMessage ? null : errorMessage ?? this.errorMessage,
+      undoMessage: clearUndoMessage ? null : undoMessage ?? this.undoMessage,
     );
   }
 
   @override
   List<Object?> get props => [
-        allCategories,
         visibleCategories,
-        flatCategories,
         searchQuery,
         expandedIds,
         pageSize,
@@ -121,9 +124,12 @@ class CategoryLoaded extends CategoryState {
         searchVisibleCount,
         totalRootCount,
         totalSearchMatchCount,
+        totalCategories,
+        nestedCount,
         hasMoreRoots,
         hasMoreSearch,
         errorMessage,
+        undoMessage,
       ];
 }
 

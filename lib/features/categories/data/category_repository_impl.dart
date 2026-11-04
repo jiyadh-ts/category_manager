@@ -11,15 +11,113 @@ class CategoryRepositoryImpl implements CategoryRepository {
   final CategoryLocalDataSource _localDataSource;
 
   @override
-  Future<List<Category>> getCategoryTree(int userId) async {
-    final flatList = await getFlatCategories(userId);
-    return buildCategoryTree(flatList);
+  Future<CategoryStats> getCategoryStats(int userId) async {
+    final total = await _localDataSource.countAll(userId);
+    final roots = await _localDataSource.countRoots(userId);
+    return CategoryStats(total: total, roots: roots);
   }
 
   @override
-  Future<List<Category>> getFlatCategories(int userId) async {
-    final rows = await _localDataSource.getCategories(userId);
+  Future<List<Category>> fetchRoots({
+    required int userId,
+    required int limit,
+    int offset = 0,
+  }) async {
+    final rows = await _localDataSource.getRootCategories(
+      userId: userId,
+      limit: limit,
+      offset: offset,
+    );
     return rows.map(_toEntity).toList();
+  }
+
+  @override
+  Future<List<Category>> fetchChildren({
+    required int userId,
+    required int parentId,
+    required int limit,
+    int offset = 0,
+  }) async {
+    final rows = await _localDataSource.getChildCategories(
+      userId: userId,
+      parentId: parentId,
+      limit: limit,
+      offset: offset,
+    );
+    return rows.map(_toEntity).toList();
+  }
+
+  @override
+  Future<CategorySearchPage> fetchSearchPage({
+    required int userId,
+    required String query,
+    required int limit,
+    int offset = 0,
+  }) async {
+    final totalMatches = await _localDataSource.countSearchMatches(
+      userId: userId,
+      query: query,
+    );
+    if (totalMatches == 0) {
+      return const CategorySearchPage(tree: [], totalMatches: 0);
+    }
+
+    final matchRows = await _localDataSource.searchCategories(
+      userId: userId,
+      query: query,
+      limit: limit,
+      offset: offset,
+    );
+
+    final byId = <int, Category>{};
+    final matchIds = <int>{};
+
+    for (final match in matchRows) {
+      matchIds.add(match.id);
+      final chain = await _localDataSource.getAncestorChain(userId, match.id);
+      final path = chain.map((c) => c.name).join(' > ');
+      for (final node in chain) {
+        byId.putIfAbsent(
+          node.id,
+          () => _toEntity(
+            node,
+            path: node.id == match.id ? path : null,
+          ),
+        );
+        if (node.id == match.id) {
+          byId[node.id] = _toEntity(node, path: path);
+        }
+      }
+    }
+
+    final flatList = byId.values.toList();
+    final tree = buildTreeFromMatches(
+      flatList,
+      flatList.where((c) => matchIds.contains(c.id)).toList(),
+    );
+
+    return CategorySearchPage(tree: tree, totalMatches: totalMatches);
+  }
+
+  @override
+  Future<List<Category>> getSubtreeForRestore({
+    required int userId,
+    required int rootId,
+  }) async {
+    final rows = await _localDataSource.getSubtreeFlat(userId, rootId);
+    return rows
+        .map(
+          (row) => Category(
+            id: row.id,
+            userId: row.userId,
+            name: row.name,
+            parentId: row.parentId,
+            createdAt: row.createdAt,
+            childCount: 0,
+            children: const [],
+          ),
+        )
+        .toList();
   }
 
   @override
@@ -33,23 +131,15 @@ class CategoryRepositoryImpl implements CategoryRepository {
       throw const AppException('Category name cannot be empty.');
     }
 
-    final flatList = await getFlatCategories(userId);
-
     if (parentId != null) {
-      Category? parent;
-      for (final category in flatList) {
-        if (category.id == parentId) {
-          parent = category;
-          break;
-        }
-      }
-      if (parent == null || parent.userId != userId) {
+      final parent =
+          await _localDataSource.getCategoryById(userId, parentId);
+      if (parent == null) {
         throw const AppException('Parent category was not found.');
       }
     }
 
-    final isDuplicate = hasDuplicateSibling(
-      flatList: flatList,
+    final isDuplicate = await _localDataSource.hasSiblingWithName(
       userId: userId,
       name: trimmedName,
       parentId: parentId,
@@ -83,15 +173,12 @@ class CategoryRepositoryImpl implements CategoryRepository {
       throw const AppException('Category name cannot be empty.');
     }
 
-    final existingModel = await _localDataSource.getCategoryById(userId, id);
-    if (existingModel == null) {
+    final existing = await _localDataSource.getCategoryById(userId, id);
+    if (existing == null) {
       throw const AppException('Category was not found.');
     }
-    final existing = _toEntity(existingModel);
 
-    final flatList = await getFlatCategories(userId);
-    final isDuplicate = hasDuplicateSibling(
-      flatList: flatList,
+    final isDuplicate = await _localDataSource.hasSiblingWithName(
       userId: userId,
       name: trimmedName,
       parentId: existing.parentId,
@@ -120,14 +207,14 @@ class CategoryRepositoryImpl implements CategoryRepository {
     required int userId,
     required int id,
   }) async {
-    final existing = await _localDataSource.getCategoryById(userId, id);
-    if (existing == null) {
+    final subtree = await _localDataSource.getSubtreeFlat(userId, id);
+    if (subtree.isEmpty) {
       throw const AppException('Category was not found.');
     }
 
-    final flatList = await getFlatCategories(userId);
-    // Children are listed first so foreign keys stay valid during delete.
-    final idsToDelete = collectDescendantIds(flatList, id);
+    // Children first so foreign keys stay valid during delete.
+    final idsToDelete =
+        subtree.reversed.map((category) => category.id).toList();
 
     try {
       await _localDataSource.deleteCategories(userId, idsToDelete);
@@ -137,17 +224,48 @@ class CategoryRepositoryImpl implements CategoryRepository {
   }
 
   @override
+  Future<void> restoreDeletedCategories({
+    required int userId,
+    required List<Category> snapshot,
+  }) async {
+    if (snapshot.isEmpty) {
+      return;
+    }
+
+    try {
+      await _localDataSource.restoreCategories(
+        userId: userId,
+        snapshot: snapshot
+            .map(
+              (category) => CategoryModel(
+                id: category.id,
+                userId: userId,
+                name: category.name,
+                parentId: category.parentId,
+                createdAt: category.createdAt,
+              ),
+            )
+            .toList(),
+      );
+    } catch (error) {
+      throw AppException('Could not restore the category. $error');
+    }
+  }
+
+  @override
   Future<void> claimOrphanCategories(int userId) async {
     await _localDataSource.claimOrphanCategories(userId);
   }
 
-  Category _toEntity(CategoryModel model) {
+  Category _toEntity(CategoryModel model, {String? path}) {
     return Category(
       id: model.id,
       userId: model.userId,
       name: model.name,
       parentId: model.parentId,
       createdAt: model.createdAt,
+      childCount: model.childCount,
+      path: path,
     );
   }
 }

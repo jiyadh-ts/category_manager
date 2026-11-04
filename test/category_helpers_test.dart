@@ -158,6 +158,37 @@ void main() {
 
       expect(getCategoryPath(flatList, 3), 'Books > Fiction > Sci-Fi');
     });
+
+    test('builds a deep breadcrumb path', () {
+      final flatList = [
+        category(id: 1, name: 'Electronics'),
+        category(id: 2, name: 'Mobiles', parentId: 1),
+        category(id: 3, name: 'Android', parentId: 2),
+        category(id: 4, name: 'Samsung', parentId: 3),
+      ];
+
+      expect(
+        getCategoryPath(flatList, 4),
+        'Electronics > Mobiles > Android > Samsung',
+      );
+    });
+  });
+
+  group('collectSubtreeForRestore', () {
+    test('returns parent-before-child snapshot of the subtree', () {
+      final flatList = [
+        category(id: 1, name: 'Books'),
+        category(id: 2, name: 'Fiction', parentId: 1),
+        category(id: 3, name: 'Sci-Fi', parentId: 2),
+        category(id: 4, name: 'Games'),
+      ];
+
+      final snapshot = collectSubtreeForRestore(flatList, 1);
+
+      expect(snapshot.map((c) => c.id), [1, 2, 3]);
+      expect(snapshot.map((c) => c.name), ['Books', 'Fiction', 'Sci-Fi']);
+      expect(snapshot.every((c) => c.children.isEmpty), isTrue);
+    });
   });
 
   group('load more helpers', () {

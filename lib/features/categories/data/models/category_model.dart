@@ -25,6 +25,7 @@ class CategoryModel {
     required this.name,
     required this.parentId,
     required this.createdAt,
+    this.childCount = 0,
   });
 
   final int id;
@@ -32,4 +33,5 @@ class CategoryModel {
   final String name;
   final int? parentId;
   final DateTime createdAt;
+  final int childCount;
 }
