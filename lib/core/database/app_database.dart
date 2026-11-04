@@ -30,13 +30,13 @@ class AppDatabase extends _$AppDatabase {
         }
       },
       beforeOpen: (OpeningDetails details) async {
+        // Required so parentId FKs are enforced (cascade delete order matters).
         await customStatement('PRAGMA foreign_keys = ON');
       },
     );
   }
 
-  /// Assigns legacy orphan categories (user_id = 0) to [userId].
-  /// Used once after upgrade so existing data is kept and attributed.
+  /// Assigns legacy orphan rows (`user_id = 0` from schema v2 upgrade) to [userId].
   Future<int> claimOrphanCategories(int userId) {
     return (update(categoryEntries)..where((row) => row.userId.equals(0)))
         .write(CategoryEntriesCompanion(userId: Value(userId)));

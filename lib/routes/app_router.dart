@@ -34,6 +34,7 @@ class AppRouter {
         },
       ),
     ],
+    // Gate routes on AuthCubit: guests → login; signed-in users leave /login.
     redirect: (BuildContext context, GoRouterState state) {
       final isLoggedIn = authCubit.state is AuthSuccess;
       final isLoginRoute = state.matchedLocation == '/login';

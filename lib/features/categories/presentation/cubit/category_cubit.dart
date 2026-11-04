@@ -21,6 +21,7 @@ class CategoryCubit extends Cubit<CategoryState> {
   }
 
   static const int defaultPageSize = 10;
+  /// Stand-in for "All": large enough that take/slice never truncates in practice.
   static const int _allPageSize = 1 << 30;
 
   final CategoryRepository _repository;
@@ -32,6 +33,7 @@ class CategoryCubit extends Cubit<CategoryState> {
   Set<int> _expandedIds = <int>{};
   int _pageSize = defaultPageSize;
   bool _showAll = false;
+  /// How many root / child / search rows the UI is allowed to show right now.
   int _rootVisibleCount = defaultPageSize;
   Map<int, int> _childVisibleCounts = <int, int>{};
   int _searchVisibleCount = defaultPageSize;
@@ -214,6 +216,7 @@ class CategoryCubit extends Cubit<CategoryState> {
   void _onAuthState(AuthState authState) {
     if (authState is AuthSuccess) {
       final userId = authState.user.id;
+      // Same user already loaded (e.g. rebuild) — skip a full reload.
       if (_currentUserId == userId && state is CategoryLoaded) {
         return;
       }
@@ -231,6 +234,7 @@ class CategoryCubit extends Cubit<CategoryState> {
   Future<void> _loadForUser(int userId) async {
     emit(const CategoryLoading());
     try {
+      // One-time ownership for legacy rows with user_id = 0 after schema v2.
       await _repository.claimOrphanCategories(userId);
       await _reloadCategories(userId);
     } catch (error) {
@@ -262,6 +266,8 @@ class CategoryCubit extends Cubit<CategoryState> {
     );
   }
 
+  /// Full tree stays in state; only [visibleCategories] is sliced for the UI.
+  /// Search pages flat matches then rebuilds a path tree; browse pages roots.
   CategoryLoaded _buildLoadedState({
     required List<Category> tree,
     required List<Category> flatList,

@@ -37,6 +37,7 @@ class AuthRepositoryImpl implements AuthRepository {
     }
   }
 
+  /// Mock auth: one field may match either JSONPlaceholder username or email.
   @override
   AppUser findUserByLogin(List<AppUser> users, String login) {
     final trimmedLogin = login.trim();

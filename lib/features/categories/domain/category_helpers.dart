@@ -4,6 +4,8 @@ String normalizeCategoryName(String name) {
   return name.trim().toLowerCase();
 }
 
+/// Turns a flat adjacency list (`parentId`) into a nested tree.
+/// Groups siblings by parent first, then attaches children starting at roots (`null`).
 List<Category> buildCategoryTree(List<Category> flatList) {
   final childrenByParentId = <int?, List<Category>>{};
 
@@ -99,6 +101,8 @@ bool hasDuplicateSibling({
   return false;
 }
 
+/// Rejects self-parent and moving a node under one of its own descendants
+/// (that would create a cycle in the hierarchy).
 bool isValidParent({
   required List<Category> flatList,
   required int categoryId,
@@ -127,6 +131,7 @@ bool isValidParent({
   return !descendantIds.contains(newParentId);
 }
 
+/// Children-first, then [id]. Safe delete order under SQLite foreign keys.
 List<int> collectDescendantIds(List<Category> flatList, int id) {
   final ids = <int>[];
   _collectChildrenFirst(flatList, id, ids);
@@ -191,7 +196,8 @@ List<Category> takeFirstCategories(List<Category> items, int count) {
   return items.take(count).toList();
 }
 
-/// Rebuilds a tree that includes each match and its ancestors.
+/// Search page: keep each match plus its ancestors so a deep hit stays
+/// reachable in the UI without loading unrelated siblings.
 List<Category> buildTreeFromMatches(
   List<Category> flatList,
   List<Category> matchesOnPage,
@@ -207,6 +213,7 @@ List<Category> buildTreeFromMatches(
 
   final selectedIds = <int>{};
   for (final match in matchesOnPage) {
+    // Walk parentId toward the root and mark every ancestor.
     Category? current = byId[match.id] ?? match;
     while (current != null) {
       selectedIds.add(current.id);
